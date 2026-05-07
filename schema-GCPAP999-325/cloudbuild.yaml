@@ -1,0 +1,122 @@
+steps:
+  # ── Step 1: Concatenate all migration SQL into a single file ─────────────
+  - name: 'ubuntu'
+    id: 'concat-migrations'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        cat migrations/V001__create_enum_types.sql > /workspace/all_migrations.sql
+        echo ";" >> /workspace/all_migrations.sql
+        cat migrations/V002__create_sectors.sql >> /workspace/all_migrations.sql
+        echo ";" >> /workspace/all_migrations.sql
+        cat migrations/V003__create_symbols.sql >> /workspace/all_migrations.sql
+        echo ";" >> /workspace/all_migrations.sql
+        cat migrations/V004__create_order_books_and_tick_trigger.sql >> /workspace/all_migrations.sql
+        echo ";" >> /workspace/all_migrations.sql
+        cat migrations/V005__create_trades.sql >> /workspace/all_migrations.sql
+        echo ";" >> /workspace/all_migrations.sql
+        cat migrations/V006__create_watchlists.sql >> /workspace/all_migrations.sql
+        echo ";" >> /workspace/all_migrations.sql
+        cat migrations/V007__create_indexes.sql >> /workspace/all_migrations.sql
+        echo "Concatenated all 7 migration files"
+        wc -l /workspace/all_migrations.sql
+
+  # ── Step 2: Copy psql binary from postgres image to workspace ────────────
+  # postgres:17 has psql. We copy the binary + shared libs to /workspace/psql_bin
+  # so the next step can use it.
+  - name: 'postgres:17'
+    id: 'stage-psql'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        mkdir -p /workspace/psql_bin/lib
+        cp /usr/lib/postgresql/17/bin/psql /workspace/psql_bin/psql
+        # Copy required shared libraries
+        for lib in $(ldd /usr/lib/postgresql/17/bin/psql | grep "=> /" | awk '{print $3}'); do
+          cp "$lib" /workspace/psql_bin/lib/ 2>/dev/null || true
+        done
+        echo "psql staged: $(ls -lh /workspace/psql_bin/psql)"
+
+  # ── Step 3: Run migrations via gcloud image (has CA certs) + staged psql ──
+  # The gcloud/cloud-sdk images have proper CA certificates for TLS to
+  # sqladmin.googleapis.com. We bring psql from Step 2.
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk:slim'
+    id: 'run-migrations'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -e
+
+        # Make staged psql available
+        export LD_LIBRARY_PATH=/workspace/psql_bin/lib:$$LD_LIBRARY_PATH
+        export PATH=/workspace/psql_bin:$$PATH
+        echo "psql available: $$(psql --version)"
+
+        # Download the Cloud SQL Auth Proxy (stored in GCS — reachable from private pool)
+        curl -sSfL -o /tmp/cloud-sql-proxy \
+          https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.15.2/cloud-sql-proxy.linux.amd64
+        chmod +x /tmp/cloud-sql-proxy
+
+        # Start Auth Proxy using Application Default Credentials (Cloud Build SA ADC)
+        /tmp/cloud-sql-proxy \
+          sbx-ag-build-adx-7i0q-1:europe-west2:ag-adx-postgres \
+          --private-ip \
+          --port 5432 &
+        PROXY_PID=$$!
+
+        # Wait up to 60 s for the proxy to be ready
+        for i in $$(seq 1 30); do
+          if /workspace/psql_bin/psql -h 127.0.0.1 -p 5432 -U postgres -d postgres \
+              -c "SELECT 1" >/dev/null 2>&1; then
+            echo "Proxy + DB ready at attempt $$i"
+            break
+          fi
+          echo "  Waiting... $$i"
+          sleep 2
+        done
+
+        export PGPASSWORD="$$DB_PASSWORD"
+        PG="/workspace/psql_bin/psql -h 127.0.0.1 -p 5432 -U postgres"
+
+        # Create adx_exchange database if absent
+        $$PG -d postgres -tc \
+          "SELECT 1 FROM pg_database WHERE datname = 'adx_exchange'" \
+          | grep -q 1 || \
+          $$PG -d postgres -c "CREATE DATABASE adx_exchange"
+        echo "Database adx_exchange ready"
+
+        # Enable pgcrypto
+        $$PG -d adx_exchange -c 'CREATE EXTENSION IF NOT EXISTS "pgcrypto"'
+        echo "pgcrypto enabled"
+
+        # Apply all 7 migrations
+        $$PG -d adx_exchange -v ON_ERROR_STOP=1 -f /workspace/all_migrations.sql
+        echo "All migrations applied successfully!"
+
+        # Verify — list tables and indexes as evidence
+        echo "=== Tables in public schema ==="
+        $$PG -d adx_exchange -c "\dt public.*"
+
+        echo "=== Indexes in public schema ==="
+        $$PG -d adx_exchange -c \
+          "SELECT tablename, indexname FROM pg_indexes WHERE schemaname='public' ORDER BY tablename, indexname;"
+
+        kill $$PROXY_PID || true
+    secretEnv:
+      - 'DB_PASSWORD'
+
+# Fetch DB password from Secret Manager
+availableSecrets:
+  secretManager:
+    - versionName: projects/sbx-ag-build-adx-7i0q-1/secrets/adx-postgres-password/versions/latest
+      env: 'DB_PASSWORD'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  pool:
+    name: 'projects/sbx-ag-build-adx-7i0q-1/locations/europe-west2/workerPools/adx-private-pool'
+
+timeout: '900s'

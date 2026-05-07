@@ -1,0 +1,5 @@
+cloud-sql-python-connector[pg8000]==1.20.2
+pg8000==1.31.5
+sqlalchemy==2.0.36
+pytest==9.0.3
+pytest-bdd==8.1.0

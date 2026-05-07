@@ -1,0 +1,26 @@
+# Cloud SQL Auth Proxy binary (downloaded at build time)
+cloud-sql-proxy
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.py[cod]
+*$py.class
+venv/
+.venv/
+.env
+
+# Pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Test outputs
+*.log
+test_output*.txt
+
+# OS
+.DS_Store
