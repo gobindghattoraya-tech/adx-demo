@@ -8,11 +8,11 @@
 ## 🌐 URLs
 
 | Endpoint | URL |
-|----------|-----|
-| **Frontend URL** | `https://market-health-dashboard-<hash>-nw.a.run.app/` |
-| **Backend URL** | `https://market-health-dashboard-<hash>-nw.a.run.app/hello` |
-| **Health Check** | `https://market-health-dashboard-<hash>-nw.a.run.app/health` |
-| **Swagger Docs** | `https://market-health-dashboard-<hash>-nw.a.run.app/docs` |
+|----------|----- |
+| **Frontend URL** | `https://market-health-dashboard-zgd6dtdbba-nw.a.run.app/` |
+| **Backend URL** | `https://market-health-dashboard-zgd6dtdbba-nw.a.run.app/hello` |
+| **Health Check** | `https://market-health-dashboard-zgd6dtdbba-nw.a.run.app/health` |
+| **Swagger Docs** | `https://market-health-dashboard-zgd6dtdbba-nw.a.run.app/docs` |
 
 > URLs are populated after first Cloud Run deployment. Check the Cloud Build logs or run:
 > ```bash
@@ -31,7 +31,7 @@ Browser → Cloud Run (market-health-dashboard, europe-west2)
             ├── GET /health    → {"status": "ok"}
             ├── GET /hello     → {"message": "Hello World"} ← from PostgreSQL
             └── GET /docs      → Swagger UI (auto-generated)
-                  │ Direct VPC Egress → adx-vpc (private-ranges-only)
+                  │ Direct VPC Egress → adx-vpc (all-traffic)
                   ▼
               Cloud SQL ag-adx-postgres → adx_exchange.messages
 ```
@@ -137,14 +137,15 @@ gcloud builds submit . \
 market-health-dashboard/
 ├── app/
 │   ├── main.py            # FastAPI app factory + lifespan
-│   ├── db.py              # Async SQLAlchemy engine
-│   ├── routes.py          # /, /health, /hello
+│   ├── db.py              # Async SQLAlchemy engine (asyncpg)
+│   ├── routes.py          # /, /health, /hello endpoints
 │   ├── schemas.py         # Pydantic response models
 │   ├── templates/
-│   │   └── index.html     # ADX branded frontend
+│   │   └── index.html     # ADX branded Jinja2 frontend
 │   └── static/
 │       └── style.css      # ADX design system
 ├── migrations/
+│   ├── seed.py            # Python asyncpg seed runner
 │   └── seed_hello_world.sql
 ├── tests/
 │   ├── conftest.py
@@ -153,7 +154,9 @@ market-health-dashboard/
 │   └── step_defs/
 │       └── test_dashboard_steps.py
 ├── Dockerfile
-├── cloudbuild.yaml
+├── cloudbuild-docker.yaml  # Public pool: Docker build + push
+├── cloudbuild.yaml         # Private pool: seed + deploy + smoke
+├── pyproject.toml
 ├── requirements.txt
 └── README.md
 ```
