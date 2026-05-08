@@ -1,0 +1,125 @@
+steps:
+  # ─── Step 1: Download Cloud SQL Auth Proxy from GCS ─────────────────────
+  # GCS is accessible from private pool via googleapis.com private networking.
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk:slim'
+    id: 'download-proxy'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        gcloud storage cp \
+          gs://sbx-ag-build-adx-7i0q-1_cloudbuild/cloud-sql-proxy \
+          /workspace/cloud-sql-proxy
+        chmod +x /workspace/cloud-sql-proxy
+        echo "✓ Cloud SQL Auth Proxy staged from GCS"
+
+  # ─── Step 2: Seed database using app image (has asyncpg pre-installed) ───
+  # Our app image in Artifact Registry already has asyncpg from requirements.txt
+  # and migrations/ directory. Artifact Registry is accessible from private pool.
+  - name: 'europe-west2-docker.pkg.dev/sbx-ag-build-adx-7i0q-1/adx-repo/market-health-dashboard:latest'
+    id: 'seed-database'
+    waitFor: ['download-proxy']
+    entrypoint: 'bash'
+    secretEnv: ['DB_PASSWORD']
+    args:
+      - '-c'
+      - |
+        # Start Cloud SQL Auth Proxy (private IP) in background
+        /workspace/cloud-sql-proxy \
+          sbx-ag-build-adx-7i0q-1:europe-west2:ag-adx-postgres \
+          --private-ip \
+          --address 127.0.0.1 \
+          --port 5432 &
+        PROXY_PID=$$!
+
+        # Wait for proxy to be ready (TCP check on port 5432)
+        echo "Waiting for Cloud SQL Auth Proxy..."
+        for i in $$(seq 1 20); do
+          bash -c "echo >/dev/tcp/127.0.0.1/5432" 2>/dev/null && echo "✓ Proxy ready after $$i s" && break
+          sleep 1
+        done
+
+        # Run seed migration (asyncpg is pre-installed in this image)
+        echo "Applying seed migration..."
+        python3 /app/migrations/seed.py
+        EXIT_CODE=$$?
+        kill $$PROXY_PID 2>/dev/null || true
+        exit $$EXIT_CODE
+
+
+  # ─── Step 3: Deploy to Cloud Run ─────────────────────────────────────────
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk:slim'
+    id: 'deploy-cloud-run'
+    waitFor: ['seed-database']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        # Deploy to Cloud Run with Direct VPC Egress (all-traffic for DNS resolution)
+        gcloud run deploy market-health-dashboard \
+          --image="europe-west2-docker.pkg.dev/sbx-ag-build-adx-7i0q-1/adx-repo/market-health-dashboard:latest" \
+          --region=europe-west2 \
+          --project=sbx-ag-build-adx-7i0q-1 \
+          --network=adx-vpc \
+          --subnet=adx-run-subnet \
+          --vpc-egress=all-traffic \
+          --set-env-vars=DB_HOST=10.104.0.6,DB_NAME=adx_exchange,DB_USER=postgres \
+          --set-secrets=DB_PASSWORD=adx-postgres-password:latest \
+          --port=8080 \
+          --min-instances=0 \
+          --max-instances=10 \
+          --memory=512Mi \
+          --cpu=1 \
+          --cpu-boost \
+          --no-allow-unauthenticated
+
+        # Allow public access (idempotent)
+        gcloud run services add-iam-policy-binding market-health-dashboard \
+          --region=europe-west2 \
+          --project=sbx-ag-build-adx-7i0q-1 \
+          --member=allUsers \
+          --role=roles/run.invoker 2>/dev/null || true
+
+        SERVICE_URL=$$(gcloud run services describe market-health-dashboard \
+          --region=europe-west2 \
+          --project=sbx-ag-build-adx-7i0q-1 \
+          --format="value(status.url)")
+
+        echo "✅ Deployed: $$SERVICE_URL"
+        echo "$$SERVICE_URL" > /workspace/service_url.txt
+
+  # ─── Step 4: Smoke tests ─────────────────────────────────────────────────
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk:slim'
+    id: 'smoke-test'
+    waitFor: ['deploy-cloud-run']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        SERVICE_URL=$$(cat /workspace/service_url.txt)
+        echo "Smoke testing: $$SERVICE_URL"
+        sleep 5
+
+        STATUS=$$(curl -s -o /dev/null -w "%{http_code}" "$$SERVICE_URL/health")
+        [ "$$STATUS" = "200" ] && echo "✓ /health → 200" || (echo "✗ /health → $$STATUS" && exit 1)
+
+        BODY=$$(curl -s "$$SERVICE_URL/hello")
+        echo "$$BODY" | grep -q "Hello World" \
+          && echo "✓ /hello → Hello World" \
+          || (echo "✗ /hello: $$BODY" && exit 1)
+
+        STATUS=$$(curl -s -o /dev/null -w "%{http_code}" "$$SERVICE_URL/")
+        [ "$$STATUS" = "200" ] && echo "✓ / → 200" || (echo "✗ / → $$STATUS" && exit 1)
+
+        echo "✅ All smoke tests passed"
+
+# ─── Secrets ─────────────────────────────────────────────────────────────────
+availableSecrets:
+  secretManager:
+    - versionName: 'projects/sbx-ag-build-adx-7i0q-1/secrets/adx-postgres-password/versions/latest'
+      env: 'DB_PASSWORD'
+
+# ─── Build options (private pool for Cloud SQL access) ───────────────────────
+options:
+  workerPool: 'projects/sbx-ag-build-adx-7i0q-1/locations/europe-west2/workerPools/adx-private-pool'
+  logging: CLOUD_LOGGING_ONLY

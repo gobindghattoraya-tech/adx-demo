@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="ADX Market Health Dashboard — real-time market status powered by the ADX platform." />
+  <title>Market Health Dashboard | ADX</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <!-- ── Header / Brand ──────────────────────────────────────── -->
+  <header class="site-header" role="banner">
+    <div class="container header-inner">
+      <div class="brand">
+        <span class="brand-mark">ADX</span>
+        <span class="brand-divider">|</span>
+        <span class="brand-name">Market Health Dashboard</span>
+      </div>
+      <nav class="header-nav" aria-label="Primary navigation">
+        <a href="/health" class="nav-link">Health</a>
+        <a href="/hello" class="nav-link">API</a>
+        <a href="/docs" class="nav-link nav-link--accent">Docs ↗</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- ── Hero ────────────────────────────────────────────────── -->
+  <main class="main" id="main-content">
+    <section class="hero" aria-labelledby="hero-heading">
+      <div class="container">
+        <p class="hero-eyebrow">ADX Platform · Proof of Concept</p>
+        <h1 id="hero-heading" class="hero-heading">Market Health Dashboard</h1>
+        <p class="hero-sub">3-tier architecture running on Google Cloud Run · Cloud SQL PostgreSQL</p>
+
+        <!-- Message Card -->
+        <div class="message-card" role="region" aria-label="Database message">
+          <p class="message-label">Message from PostgreSQL</p>
+          <p class="message-value" id="db-message">{{ message }}</p>
+          <p class="message-meta">
+            Sourced from <code>adx_exchange.messages</code> via Private IP
+          </p>
+        </div>
+
+        <!-- Status Pills -->
+        <div class="status-grid" role="list" aria-label="Service status">
+          <div class="status-pill status-pill--green" role="listitem">
+            <span class="pill-dot"></span>
+            <span>Frontend</span>
+            <strong>Online</strong>
+          </div>
+          <div class="status-pill status-pill--green" role="listitem">
+            <span class="pill-dot"></span>
+            <span>Backend</span>
+            <strong>Online</strong>
+          </div>
+          <div class="status-pill status-pill--green" role="listitem">
+            <span class="pill-dot"></span>
+            <span>Database</span>
+            <strong>Connected</strong>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Tech Stack ───────────────────────────────────────── -->
+    <section class="stack-section" aria-labelledby="stack-heading">
+      <div class="container">
+        <h2 id="stack-heading" class="section-title">Tech Stack</h2>
+        <div class="stack-grid">
+          <div class="stack-card">
+            <span class="stack-icon">⚡</span>
+            <h3>FastAPI</h3>
+            <p>Python 3.13 ASGI backend — async-native, Swagger UI at <a href="/docs">/docs</a></p>
+          </div>
+          <div class="stack-card">
+            <span class="stack-icon">☁️</span>
+            <h3>Cloud Run</h3>
+            <p>Serverless containers · europe-west2 · Direct VPC Egress</p>
+          </div>
+          <div class="stack-card">
+            <span class="stack-icon">🐘</span>
+            <h3>Cloud SQL</h3>
+            <p>PostgreSQL 17 · Private IP · adx_exchange database</p>
+          </div>
+          <div class="stack-card">
+            <span class="stack-icon">🔒</span>
+            <h3>Secret Manager</h3>
+            <p>DB credentials sourced from GCP Secret Manager — zero hardcoded secrets</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ── Footer ──────────────────────────────────────────────── -->
+  <footer class="site-footer" role="contentinfo">
+    <div class="container footer-inner">
+      <p class="footer-brand">ADX Platform</p>
+      <p class="footer-meta">Powered by Google Cloud · Built with FastAPI · GCPAP999-324</p>
+    </div>
+  </footer>
+</body>
+</html>

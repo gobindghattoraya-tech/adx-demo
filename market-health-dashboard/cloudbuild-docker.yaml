@@ -1,0 +1,63 @@
+steps:
+  # ─── Step 0: Resolve image tag ───────────────────────────────────────────
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk:slim'
+    id: 'resolve-tag'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        TAG=$$(git rev-parse --short HEAD 2>/dev/null || echo "latest")
+        echo "$$TAG" > /workspace/image_tag.txt
+        echo "✓ Image tag: $$TAG"
+
+  # ─── Step 1: Ensure Artifact Registry repo ───────────────────────────────
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk:slim'
+    id: 'ensure-artifact-registry'
+    waitFor: ['resolve-tag']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        gcloud artifacts repositories describe adx-repo \
+          --project=sbx-ag-build-adx-7i0q-1 \
+          --location=europe-west2 \
+          --format="value(name)" 2>/dev/null \
+        || gcloud artifacts repositories create adx-repo \
+          --project=sbx-ag-build-adx-7i0q-1 \
+          --location=europe-west2 \
+          --repository-format=docker \
+          --description="ADX Docker images"
+        echo "✓ adx-repo ready"
+
+  # ─── Step 2: Build Docker image (public internet → PyPI accessible) ───────
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-image'
+    waitFor: ['ensure-artifact-registry']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        TAG=$$(cat /workspace/image_tag.txt)
+        IMAGE="europe-west2-docker.pkg.dev/sbx-ag-build-adx-7i0q-1/adx-repo/market-health-dashboard"
+        docker build \
+          -t "$$IMAGE:$$TAG" \
+          -t "$$IMAGE:latest" \
+          --cache-from "$$IMAGE:latest" \
+          .
+        echo "✓ Image built: $$IMAGE:$$TAG"
+
+  # ─── Step 3: Push image ───────────────────────────────────────────────────
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-image'
+    waitFor: ['build-image']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        IMAGE="europe-west2-docker.pkg.dev/sbx-ag-build-adx-7i0q-1/adx-repo/market-health-dashboard"
+        docker push --all-tags "$$IMAGE"
+        echo "✓ Image pushed"
+
+# ─── Build options (NO worker pool — uses public Cloud Build) ────────────────
+options:
+  logging: CLOUD_LOGGING_ONLY
