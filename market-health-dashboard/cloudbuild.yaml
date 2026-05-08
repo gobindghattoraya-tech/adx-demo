@@ -13,7 +13,7 @@ steps:
         chmod +x /workspace/cloud-sql-proxy
         echo "✓ Cloud SQL Auth Proxy staged from GCS"
 
-  # ─── Step 2: Seed database using app image (has asyncpg pre-installed) ───
+  # ─── Step 2a: Seed hello-world data (existing) ───────────────────────────
   # Our app image in Artifact Registry already has asyncpg from requirements.txt
   # and migrations/ directory. Artifact Registry is accessible from private pool.
   - name: 'europe-west2-docker.pkg.dev/sbx-ag-build-adx-7i0q-1/adx-repo/market-health-dashboard:latest'
@@ -46,11 +46,42 @@ steps:
         kill $$PROXY_PID 2>/dev/null || true
         exit $$EXIT_CODE
 
+  # ─── Step 2b: Seed ADX symbols, sectors & order books (GCPAP999-326) ───────
+  - name: 'europe-west2-docker.pkg.dev/sbx-ag-build-adx-7i0q-1/adx-repo/market-health-dashboard:latest'
+    id: 'seed-adx-data'
+    waitFor: ['seed-database']
+    entrypoint: 'bash'
+    secretEnv: ['DB_PASSWORD']
+    args:
+      - '-c'
+      - |
+        # Start Cloud SQL Auth Proxy (private IP) in background
+        /workspace/cloud-sql-proxy \
+          sbx-ag-build-adx-7i0q-1:europe-west2:ag-adx-postgres \
+          --private-ip \
+          --address 127.0.0.1 \
+          --port 5432 &
+        PROXY_PID=$$!
+
+        # Wait for proxy to be ready
+        echo "Waiting for Cloud SQL Auth Proxy..."
+        for i in $$(seq 1 20); do
+          bash -c "echo >/dev/tcp/127.0.0.1/5432" 2>/dev/null && echo "✓ Proxy ready after $$i s" && break
+          sleep 1
+        done
+
+        # Run ADX symbol + order book seed (scripts/ is in /app via Dockerfile COPY)
+        echo "Running ADX data seed..."
+        cd /app && python3 -m scripts.seed_adx_data
+        EXIT_CODE=$$?
+        kill $$PROXY_PID 2>/dev/null || true
+        exit $$EXIT_CODE
+
 
   # ─── Step 3: Deploy to Cloud Run ─────────────────────────────────────────
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk:slim'
     id: 'deploy-cloud-run'
-    waitFor: ['seed-database']
+    waitFor: ['seed-adx-data']
     entrypoint: 'bash'
     args:
       - '-c'
