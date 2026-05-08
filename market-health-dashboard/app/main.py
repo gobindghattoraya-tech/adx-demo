@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from app.routes import router
 from app.db import init_db
+from app.api.v1 import market as market_v1
 
 
 @asynccontextmanager
@@ -25,3 +26,4 @@ app = FastAPI(
 
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 app.include_router(router)
+app.include_router(market_v1.router, prefix="/api/v1", tags=["market"])

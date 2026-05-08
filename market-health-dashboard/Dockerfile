@@ -18,9 +18,10 @@ WORKDIR /app
 COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
-# Copy application source and migrations
+# Copy application source, migrations, and seed scripts
 COPY app/ ./app/
 COPY migrations/ ./migrations/
+COPY scripts/ ./scripts/
 
 # Set ownership
 RUN chown -R appuser:appgroup /app

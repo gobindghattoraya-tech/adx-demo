@@ -55,3 +55,11 @@ async def hello(db: AsyncSession = Depends(get_db)) -> HelloResponse:
             status_code=503,
             detail=f"Database unavailable: {exc}",
         )
+
+
+@router.get("/dashboard", response_class=HTMLResponse, include_in_schema=False)
+async def dashboard(request: Request) -> HTMLResponse:
+    """Serve the Good Book Certified™ dashboard shell.
+    All data is loaded client-side via fetch() calls to /api/v1/* endpoints.
+    """
+    return templates.TemplateResponse(request, "dashboard.html", {})
