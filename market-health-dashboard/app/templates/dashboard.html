@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="ADX Good Book Certified™ — real-time order book resilience and turnover health dashboard." />
+  <title>Good Book Certified™ | ADX Market Health</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;900&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="stylesheet" href="/static/dashboard.css" />
+</head>
+<body>
+
+  <!-- ── Top Bar ─────────────────────────────────────────────────────────── -->
+  <header class="site-header" role="banner">
+    <div class="container header-inner">
+      <div class="brand">
+        <span class="brand-mark">ADX</span>
+        <span class="brand-divider">|</span>
+        <span class="brand-name">Good Book Certified™</span>
+      </div>
+      <nav class="header-nav" aria-label="Primary navigation">
+        <a href="/" class="nav-link">Home</a>
+        <a href="/docs" class="nav-link">API Docs ↗</a>
+        <button id="btn-methodology" class="btn-outline" aria-label="View methodology">Methodology</button>
+        <button id="btn-refresh"     class="btn-accent"  aria-label="Refresh data">↺ Refresh</button>
+      </nav>
+    </div>
+  </header>
+
+  <main class="dash-main" id="main-content">
+
+    <!-- ── Page Title ──────────────────────────────────────────────────── -->
+    <section class="dash-hero">
+      <div class="container">
+        <h1 class="dash-title">Good Book Certified™</h1>
+        <p class="dash-subtitle">Real-time order book resilience and turnover health · ADX Primary Market</p>
+      </div>
+    </section>
+
+    <!-- ── KPI Row ─────────────────────────────────────────────────────── -->
+    <section class="kpi-section" aria-label="Market KPIs">
+      <div class="container">
+        <div class="kpi-grid" id="kpi-grid" role="list">
+          <!-- Populated by loadMarketSummary() -->
+          <div class="kpi-card kpi-skeleton" role="listitem"><span class="kpi-loader">Loading…</span></div>
+          <div class="kpi-card kpi-skeleton" role="listitem"><span class="kpi-loader">Loading…</span></div>
+          <div class="kpi-card kpi-skeleton" role="listitem"><span class="kpi-loader">Loading…</span></div>
+          <div class="kpi-card kpi-skeleton" role="listitem"><span class="kpi-loader">Loading…</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Filters ─────────────────────────────────────────────────────── -->
+    <section class="filter-bar" aria-label="Filter controls">
+      <div class="container filter-inner">
+        <input id="filter-search"  type="search" placeholder="Search symbol or issuer…"
+               class="filter-input" aria-label="Search symbol" />
+
+        <select id="filter-sector" class="filter-select" aria-label="Filter by sector">
+          <option value="">All Sectors</option>
+          <option>Banking</option>
+          <option>Diversified</option>
+          <option>Energy</option>
+          <option>Telecom</option>
+          <option>Real Estate</option>
+          <option>Chemicals</option>
+        </select>
+
+        <select id="filter-tier" class="filter-select" aria-label="Filter by tier">
+          <option value="">All Tiers</option>
+          <option>Gold</option>
+          <option>Silver</option>
+          <option>Watchlist</option>
+          <option>Disqualified</option>
+        </select>
+
+        <label class="filter-label" for="filter-minbrs">Min BRS</label>
+        <input id="filter-minbrs" type="number" min="0" max="100" value="0"
+               class="filter-number" aria-label="Minimum BRS score" />
+
+        <button id="btn-apply-filter" class="btn-accent btn-sm">Apply</button>
+        <button id="btn-reset-filter" class="btn-outline btn-sm">Reset</button>
+      </div>
+    </section>
+
+    <!-- ── Two-Panel Layout ────────────────────────────────────────────── -->
+    <section class="dash-body">
+      <div class="container dash-panels">
+
+        <!-- Left: Symbol Universe -->
+        <aside class="panel panel--left" aria-label="Symbol Universe">
+          <div class="panel-header">
+            <h2 class="panel-title">Symbol Universe</h2>
+            <span class="panel-sub" id="symbol-count-label">Ranked by Book Resilience Score</span>
+          </div>
+          <ul class="symbol-list" id="symbol-list" role="list" aria-live="polite">
+            <li class="symbol-list__loading">Loading symbols…</li>
+          </ul>
+        </aside>
+
+        <!-- Right: Symbol Detail -->
+        <article class="panel panel--right" id="detail-panel" aria-label="Symbol detail" aria-live="polite">
+
+          <!-- Placeholder state -->
+          <div class="detail-placeholder" id="detail-placeholder">
+            <span class="placeholder-icon">📊</span>
+            <p>Select a symbol from the list to view its BRS detail.</p>
+          </div>
+
+          <!-- Detail content (hidden until symbol selected) -->
+          <div class="detail-content" id="detail-content" hidden>
+
+            <!-- Detail Header -->
+            <div class="detail-header">
+              <div class="detail-title-row">
+                <h2 class="detail-ticker" id="d-ticker">—</h2>
+                <span class="detail-name" id="d-name"></span>
+              </div>
+              <div class="detail-badges">
+                <span class="tier-badge" id="d-tier-badge"></span>
+                <span class="trend-badge" id="d-trend-badge"></span>
+              </div>
+              <div class="detail-meta">
+                <span>Sector: <strong id="d-sector"></strong></span>
+                <span>Best Bid: <strong id="d-best-bid"></strong></span>
+                <span>Best Offer: <strong id="d-best-offer"></strong></span>
+                <span>Spread: <strong id="d-spread"></strong></span>
+              </div>
+            </div>
+
+            <!-- KPI Strip -->
+            <div class="detail-kpis" role="list">
+              <div class="dkpi-card" role="listitem">
+                <span class="dkpi-label">BRS</span>
+                <span class="dkpi-value" id="d-brs">—</span>
+                <div class="dkpi-bar-wrap"><div class="dkpi-bar" id="d-brs-bar"></div></div>
+              </div>
+              <div class="dkpi-card" role="listitem">
+                <span class="dkpi-label">Trades</span>
+                <span class="dkpi-value" id="d-trades">—</span>
+              </div>
+              <div class="dkpi-card" role="listitem">
+                <span class="dkpi-label">Volume (AED)</span>
+                <span class="dkpi-value" id="d-volume">—</span>
+              </div>
+              <div class="dkpi-card" role="listitem">
+                <span class="dkpi-label">Value (AED)</span>
+                <span class="dkpi-value" id="d-value">—</span>
+              </div>
+            </div>
+
+            <!-- Sub-scores -->
+            <div class="subscore-grid" role="list" aria-label="BRS sub-scores">
+              <div class="subscore-card" id="sc-dc" role="listitem">
+                <span class="subscore-name">DC</span>
+                <span class="subscore-full">Depth Distribution</span>
+                <span class="subscore-val" id="d-dc">—</span>
+                <div class="subscore-bar-wrap"><div class="subscore-bar" id="d-dc-bar"></div></div>
+              </div>
+              <div class="subscore-card" id="sc-tf" role="listitem">
+                <span class="subscore-name">TF</span>
+                <span class="subscore-full">1-Tick Shock</span>
+                <span class="subscore-val" id="d-tf">—</span>
+                <div class="subscore-bar-wrap"><div class="subscore-bar" id="d-tf-bar"></div></div>
+              </div>
+              <div class="subscore-card" id="sc-ir" role="listitem">
+                <span class="subscore-name">IR</span>
+                <span class="subscore-full">Interaction Rate</span>
+                <span class="subscore-val" id="d-ir">—</span>
+                <div class="subscore-bar-wrap"><div class="subscore-bar" id="d-ir-bar"></div></div>
+              </div>
+              <div class="subscore-card" id="sc-plc" role="listitem">
+                <span class="subscore-name">PLC</span>
+                <span class="subscore-full">Ladder Convexity</span>
+                <span class="subscore-val" id="d-plc">—</span>
+                <div class="subscore-bar-wrap"><div class="subscore-bar" id="d-plc-bar"></div></div>
+              </div>
+            </div>
+
+            <!-- Charts Row -->
+            <div class="charts-row">
+              <div class="chart-card">
+                <h3 class="chart-title">BRS Intraday</h3>
+                <canvas id="chart-intraday" height="160" aria-label="BRS intraday trend chart"></canvas>
+              </div>
+              <div class="chart-card">
+                <h3 class="chart-title">Displayed Depth</h3>
+                <canvas id="chart-depth" height="160" aria-label="Order book depth chart"></canvas>
+              </div>
+            </div>
+
+          </div><!-- /detail-content -->
+        </article>
+
+      </div><!-- /dash-panels -->
+    </section>
+
+  </main>
+
+  <!-- ── Footer ──────────────────────────────────────────────────────────── -->
+  <footer class="site-footer" role="contentinfo">
+    <div class="container footer-inner">
+      <p class="footer-brand">ADX Platform · Good Book Certified™</p>
+      <p class="footer-meta">Powered by Google Cloud · FastAPI · Cloud SQL PostgreSQL · GCPAP999-328</p>
+    </div>
+  </footer>
+
+  <script src="/static/dashboard.js"></script>
+</body>
+</html>
